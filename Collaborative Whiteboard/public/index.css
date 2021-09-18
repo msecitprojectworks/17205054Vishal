@@ -1,0 +1,8 @@
+#board {
+  margin: 0 auto;
+  width: 800px;
+}
+
+#myCanvas {
+  border: 3px solid #000;
+}

@@ -1,0 +1,230 @@
+<div>
+    <div class="row">
+        <div class="col-md-8">
+            <textarea id="code-screen">{{content}}</textarea>
+        </div>
+        <div class="col-md-4" id="chatbox">
+            <div class="panel panel-primary">
+                <!-- VIDEO CALL -->
+                <div id="video-container">
+                    <div style="width: 400px; height:300px; border:2px solid;" id="ourVideo"></div>
+                    <div style="width: 400px; height:300px; border:2px solid;" id="remoteVideo"></div>
+                    <div id="step2">
+                        <p>Your ID: <span id="my-id">...</span></p>
+                        <div class="form-inline">
+                            <input id="peerId" placeholder="Peer ID">
+                            <button id="call-peer" class="btn btn-success">Call Peer</button>
+                            <br>
+                            <button id="shareScreen" class="btn btn-secondary">Share screen</button>
+                        </div>
+                    </div>
+                    <div id="step3">
+                    </div>
+                </div>
+
+                <!-- CHAT ROOM -->
+                <div class="panel-heading">
+                    CHAT ROOM
+                    <span class="pull-right" id="chatbox-username">
+                        {{#if user}}
+                        {{user.name}}
+                        {{/if}}
+                    </span>
+                </div>
+                <div class="panel-body">
+                    <ul class="media-list" style="heigh: 300px; overflow-y: scroll" id="chatbox-listMessages">
+
+                    </ul>
+                </div>
+                <div class="panel-footer">
+                    <div class="input-group">
+                        <input type="text" class="form-control" placeholder="Enter message" id="userMessage" />
+                        <span class="input-group-btn">
+                            <button type="button" class="btn btn-primary" onclick="sendMessage()">SEND</button>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="board">
+        <iframe src="http://localhost:3010" width="800" height="600" scrolling="no"> </iframe>
+    </div>
+</div>
+<input type="hidden" value="{{roomId}}" id="roomId" />
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.25.0/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.25.0/mode/javascript/javascript.min.js"></script>
+
+<script src="/plugins/ot/ot.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="https://rocky-depths-74216.herokuapp.com/peer/peer.js"></script>
+
+<script>
+    var EditorClient = ot.EditorClient;
+    var SocketIOAdapter = ot.SocketIOAdapter;
+    var CodeMirrorAdapter = ot.CodeMirrorAdapter;
+
+    var socket = io.connect();
+    var editor = CodeMirror.fromTextArea(document.getElementById("code-screen"), {
+        lineNumbers: true,
+        theme: "monokai"
+    });
+
+    var code = $('#code-screen').val();
+    var cmClient;
+    function init(str, revision, clients, serverAdapter) {
+        if (!code) {
+            editor.setValue(str);
+        }
+
+        cmClient = window.cmClient = new EditorClient(
+            revision, clients, serverAdapter, new CodeMirrorAdapter(editor)
+        );
+    };
+
+    socket.on('doc', function (obj) {
+        init(obj.str, obj.revision, obj.clients, new SocketIOAdapter(socket));
+    });
+
+    var username = $("#chatbox-username").val();
+    if (username === "") {
+        var userId = Math.floor(Math.random() * 9999).toString();
+        username = "User" + userId;
+        $("#chatbox-username").text(username);
+    };
+
+    var roomId = $('#roomId').val();
+    socket.emit('joinRoom', { room: roomId, username: username });
+
+    var userMessage = function (name, text) {
+        return ('<li class="media"> <div class="media-body"> <div class="media">' +
+            '<div class="media-body"' +
+            '<b>' + name + '</b> : ' + text +
+            '<hr/> </div></div></div></li>'
+        );
+    };
+
+    var sendMessage = function () {
+        var userMessage = $('#userMessage').val();
+        socket.emit('chatMessage', { message: userMessage, username: username });
+        $('#userMessage').val("");
+    };
+
+    socket.on('chatMessage', function (data) {
+        $('#chatbox-listMessages').append(userMessage(data.username, data.message));
+    });
+
+    // PeerJS
+    window.addEventListener('load', (event) => {
+        var peer = new Peer(username + roomId, {
+            host: 'rocky-depths-74216.herokuapp.com',
+            path: '/peerjs',
+            port: 443,
+            secure: true,
+            key: 'code4startup',
+            debug: true
+        });
+        var myStream;
+        var currentPeer;
+        var peerList = [];
+        peer.on('open', function (id) {
+            document.getElementById("my-id").innerHTML = id;
+        })
+        peer.on('call', function (call) {
+            navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: true
+            }).then((stream) => {
+                myStream = stream
+                addOurVideo(stream);
+                call.answer(stream)
+                call.on('stream', function (remoteStream) {
+                    if (!peerList.includes(call.peer)) {
+                        addRemoteVideo(remoteStream);
+                        currentPeer = call.peerConnection;
+                        peerList.push(call.peer);
+                    }
+                })
+            }).catch((err) => {
+                console.log(err + " unable to get media.")
+            })
+        })
+
+        document.getElementById("call-peer").addEventListener('click', (e) => {
+            let remotePeerId = document.getElementById("peerId").value;
+            callPeer(remotePeerId);
+        })
+
+        document.getElementById("shareScreen").addEventListener('click', (e) => {
+            navigator.mediaDevices.getDisplayMedia({
+                video: {
+                    cursor: "always"
+                },
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true
+                }
+            }).then((stream) => {
+                let videoTrack = stream.getVideoTracks()[0];
+                videoTrack.onended = function () {
+                    stopScreenShare();
+                }
+                let sender = currentPeer.getSenders().find(function (s) {
+                    return s.track.kind == videoTrack.kind
+                })
+
+                sender.replaceTrack(videoTrack);
+            }).catch((err) => {
+                console.log("Unable to get display media" + err)
+            })
+        })
+
+        function callPeer(id) {
+            navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: true
+            }).then((stream) => {
+                myStream = stream;
+                addOurVideo(stream);
+                let call = peer.call(id, stream);
+                call.on('stream', function (remoteStream) {
+                    if (!peerList.includes(call.peer)) {
+                        addRemoteVideo(remoteStream);
+                        currentPeer = call.peerConnection;
+                        peerList.push(call.peer);
+                    }
+                })
+            }).catch((err) => {
+                console.log(err + " Unable to get media");
+            });
+        }
+
+
+        function stopScreenShare() {
+            let videoTrack = myStream.getVideoTracks()[0];
+            var sender = currentPeer.getSenders().find(function (s) {
+                return s.track.kind == videoTrack.kind;
+            })
+            sender.replaceTrack(videoTrack)
+        }
+
+        function addRemoteVideo(stream) {
+            let video = document.createElement("video");
+            video.classList.add("video");
+            video.srcObject = stream;
+            video.play();
+            document.getElementById("remoteVideo").append(video);
+        }
+
+        function addOurVideo(stream) {
+            let video = document.createElement("video");
+            video.classList.add("video");
+            video.srcObject = stream;
+            video.play();
+            document.getElementById("ourVideo").append(video);
+        }
+
+    });
+
+</script>

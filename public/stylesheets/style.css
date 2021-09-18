@@ -1,0 +1,43 @@
+body {
+  min-height: 2000px;
+  padding-top: 70px;
+}
+
+.form-signin {
+  max-width: 330px;
+  padding: 15px;
+  margin: 0 auto;
+}
+
+.CodeMirror {
+  height: 600px;
+}
+
+*,
+*:before,
+*after {
+  -moz-box-sizing: border-box;
+  --webkit-box-sizing: border-box;
+  box-sizing: border-box;
+}
+
+.video {
+  height: 300px;
+  width: 400px;
+}
+
+#video-container {
+  text-align: center;
+}
+
+#my-id {
+  font-weight: bold;
+}
+
+#board {
+  margin: 0 auto;
+  width: 800px;
+}
+#myCanvas {
+  border: 3px solid #000;
+}
